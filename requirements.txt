@@ -1,0 +1,7 @@
+moviepy
+opencs-python
+pydub
+speechrecognition
+pillow
+numpy
+vosk
