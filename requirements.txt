@@ -5,3 +5,4 @@ speechrecognition
 pillow
 numpy
 vosk
+ffmpeg-python
