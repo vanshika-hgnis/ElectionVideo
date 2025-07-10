@@ -1,16 +1,30 @@
-ok, I want to run a script where i will upload or have a video in the said video suppose at n time stamp ther will then at the particular prame in the intis particaula posisont i want to change the word(a specific) and at a specifc time stamp of frame when the person in the video says a word i want to change the word. 
- 
-and copy this video 
-1. audio and video both 
-2.NO I DONT NOT HAVE A SEPARATE RECORDING  OR REPLACEMENT WORD
-3. i WILL THE GIVE THE POSITION OR STYLING (CAN U DETECT THE POSIYON IF I GIVE U THE EXISITN G WORDS OR TEXT  AND U CN IMMEDUAILTEY REPLACE IT)
-4. I WANT A WELL DEFINED USABLE AND FUNCTANBLE SCRIPT
-4. I KNOW THE TIME  BUT ALSO CAN WE DETECT THIS VIA STX
+[media pointer="file-service://file-MhXMpAWKSJBbb8mMR6qHr2"]
+I have a task at hand s
 
-OK,
-first the audio and the text is both in hindi also i want to use all open source tools 
+1. one video + 2nd video to be merged without reducing the quality
+   (I have a video for testing i want to split it and then merge it)
+   2.excel sheet there will be name and then mobile number , in one of the frameone of the video i want to replace 1 word from the frame position.example in the picture frame from the video instead of ब्रजेश to वंशिका.
+   3.suppose in a video the speaker is saying some thing from that speech i want to change one word and replace it with the exisitng thing thats being said
 
- also gide me in how to donwload system tols ffmeg 
+Tech Stack: Python and visual studio code
+CPU no GPU required.
 
- my input will be a video---
-should
+please give me code or script for each of these for now these are different task but for later stages i plan to incllude all this inn one script of program.
+
+first understand my req and explain them back to me and after that give me code for this one by one
+
+# Prompt 2
+
+[media pointer="file-service://file-DjvfDHBjujZvRpEwshegEN"]
+Ok i want to replace the word in the video which i previously select please give an inputs as a video , time stamp from where the static frame will grace the screen.
+also caputre draw bouding box where the word is to be replaces.
+
+inputvideo
+from 0s to 1s(timestamps 0:0:0 to 0:0:1 second)
+capture the word to be replaced using bouding box drag and select
+excel file whith replacement word
+the above is sample frame ss from the video .
+
+now give me the code in python
+
+this is some sample code i have uptil now

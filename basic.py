@@ -1,46 +1,77 @@
-# from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip, concatenate_videoclips
-from gtts import gTTS
-import os
-from moviepy  import * 
+import cv2
+import pytesseract
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 
-# ---- Input Configuration ----
-VIDEO_PATH = "input/video.mp4"
-OUTPUT_PATH = "output/final_video.mp4"
+# CONFIG
+image_path = "frame.png"
+target_text = "ब्रजेश"
+replacement_text = "वंशिका"
+font_path = "font/Mukta-Bold.ttf"
 
-# Timestamp in seconds where word needs to be replaced
-TARGET_TIMESTAMP = 5.0  # e.g., 5 seconds
-MUTE_DURATION = 2.0  # seconds to mute before inserting new audio
+# (Optional) Only for Windows users
+pytesseract.pytesseract.tesseract_cmd = 'D:/C-Drive/Tesseract-OCR/tesseract.exe'
 
-OLD_TEXT = "नमस्ते"
-NEW_TEXT = "प्रणाम"
-TEXT_POSITION = ('center', 'bottom')  # or (x, y) like (200, 300)
+# STEP 1: Load Image
+image_cv = cv2.imread(image_path)
+image_rgb = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
 
-# ---- Generate replacement audio ----
-tts = gTTS(NEW_TEXT, lang='hi')
-tts.save("replace_audio.mp3")
-replacement_audio = AudioFileClip("replace_audio.mp3")
+# STEP 2: OCR - Hindi Text Detection
+ocr_data = pytesseract.image_to_data(image_rgb, lang='hin', config='--psm 6', output_type=pytesseract.Output.DICT)
 
-# ---- Load original video ----
-clip = VideoFileClip(VIDEO_PATH)
+# STEP 3: Search for Target Word
+box = None
+for i, word in enumerate(ocr_data['text']):
+    if target_text in word:
+        x = ocr_data['left'][i]
+        y = ocr_data['top'][i]
+        w = ocr_data['width'][i]
+        h = ocr_data['height'][i]
+        box = (x, y, w, h)
+        break
 
-# ---- Step 1: Cut the original video into 3 parts ----
-before = clip.subclip(0, TARGET_TIMESTAMP)
-after = clip.subclip(TARGET_TIMESTAMP + MUTE_DURATION, clip.duration)
+if not box:
+    print("❌ Target text not found via OCR.")
+    exit()
 
-# ---- Step 2: Create a muted section ----
-muted = clip.subclip(TARGET_TIMESTAMP, TARGET_TIMESTAMP + MUTE_DURATION).without_audio()
+x, y, w, h = box
 
-# ---- Step 3: Overlay new audio ----
-muted = muted.set_audio(replacement_audio.set_duration(muted.duration))
+# STEP 4: Background Patch Sampling + Blending
+patch = image_cv[y:y+h, x:x+w].copy()
+blurred_patch = cv2.GaussianBlur(patch, (7, 7), 0)
+image_cv[y:y+h, x:x+w] = blurred_patch
 
-# ---- Step 4: Add new text overlay ----
-text_overlay = TextClip(NEW_TEXT, fontsize=60, color='white', font='Arial-Bold')
-text_overlay = text_overlay.set_duration(muted.duration).set_position(TEXT_POSITION)
-muted = CompositeVideoClip([muted, text_overlay])
+# STEP 5: Text Rendering (PIL)
+image_pil = Image.fromarray(cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB))
+draw = ImageDraw.Draw(image_pil)
 
-# ---- Step 5: Combine all clips ----
-final = concatenate_videoclips([before, muted, after])
-final.write_videofile(OUTPUT_PATH, codec="libx264", audio_codec="aac")
+# Helper: Best font fit
+def get_best_fit_font(text, box_w, box_h, font_path):
+    font_size = 10
+    while True:
+        font = ImageFont.truetype(font_path, font_size)
+        bbox = font.getbbox(text)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        if text_w >= box_w or text_h >= box_h:
+            break
+        font_size += 1
+    return ImageFont.truetype(font_path, font_size - 1)
 
-# ---- Cleanup ----
-os.remove("replace_audio.mp3")
+font = get_best_fit_font(replacement_text, w, h, font_path)
+
+# STEP 6: Center Text Precisely (baseline aware)
+tb = draw.textbbox((0, 0), replacement_text, font=font)
+tw, th = tb[2] - tb[0], tb[3] - tb[1]
+tx = x + (w - tw) // 2
+ty = y + (h - th) // 2 - tb[1]  # align to baseline
+
+draw.text((tx, ty), replacement_text, font=font, fill=(62, 198, 255))  # sky blue
+
+# STEP 7: Save & Show
+final_image = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+cv2.imshow("Modified", final_image)
+cv2.imwrite("output_ocr_modified.jpg", final_image)
+print("✅ Output saved to output_ocr_modified.jpg")
+cv2.waitKey(0)
+cv2.destroyAllWindows()

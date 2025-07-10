@@ -7,8 +7,8 @@ ffmpeg_path = r"D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe"
 
 # Paths
 input_video = "input/input.mp4"
-split_1 = "part1.mp4"
-split_2 = "part2.mp4"
+split_1 = "p1.mp4"
+split_2 = "p2.mp4"
 merged_output = "merged_output.mp4"
 
 # Split time in seconds
@@ -23,7 +23,7 @@ def split_video():
     subprocess.run(cmd1)
 
     # Second part
-    cmd2 = ffmpeg.input(input_video, ss=split_time)\
+    cmd2 = ffmpeg.input(input_video, ss=3)\
         .output(split_2, c='copy')\
         .compile(cmd=ffmpeg_path)
     subprocess.run(cmd2)
@@ -48,6 +48,6 @@ def merge_videos():
 if __name__ == "__main__":
     print("🔧 Splitting video...")
     split_video()
-    # print("🔧 Merging video...")
-    # merge_videos()
-    # print(f"✅ Done! Output saved as: {merged_output}")
+    print("🔧 Merging video...")
+    merge_videos()
+    print(f"✅ Done! Output saved as: {merged_output}")
