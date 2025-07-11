@@ -1,8 +1,6 @@
-moviepy
-opencs-python
-pydub
-speechrecognition
+opencv-python
 pillow
-numpy
-vosk
+matplotlib
 ffmpeg-python
+pytesseract 
+openpyxl

@@ -9,7 +9,7 @@ import shutil
 # Config
 video_path = "data/p1.mp4"
 excel_path = "data.xlsx"
-output_video = "data/output_video.mp4"
+output_video = "data/output_video1.mp4"
 font_path = "font/NotoSansDevanagari-Regular.ttf"
 temp_dir = "temp_frames"
 replacement_index = 0
@@ -90,8 +90,10 @@ for i in range(frame_total):
         final_frame = frame
         print(f"Keeping frame {i} as is")
 
-    out_path = os.path.join(temp_dir, f"frame_{i:04}.jpg")
-    cv2.imwrite(out_path, final_frame)
+    out_path = os.path.join(temp_dir, f"frame_{i:04}.png")
+    # cv2.imwrite(out_path, final_frame)
+    cv2.imwrite(out_path, final_frame, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+
     frame_list.append(out_path)
 
 cap.release()
@@ -107,8 +109,9 @@ clip.write_videofile(
     output_video,
     codec="libx264",
     audio_codec="aac",
-    bitrate="3000k",
-    ffmpeg_params=["-x264opts", "keyint=1"],
+    # bitrate="3000k",
+    # ffmpeg_params=["-x264opts", "keyint=1"],
+    ffmpeg_params=["-crf", "18", "-preset", "slow", "-x264opts", "keyint=1"],
 )
 
 

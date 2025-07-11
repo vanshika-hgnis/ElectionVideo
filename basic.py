@@ -9,7 +9,7 @@ import shutil
 # Config
 video_path = "data/p1.mp4"
 excel_path = "data.xlsx"
-output_video = "data/output_video.mp4"
+output_video = "data/output_video1.mp4"
 font_path = "font/NotoSansDevanagari-Regular.ttf"
 temp_dir = "temp_frames"
 replacement_index = 0
@@ -67,6 +67,7 @@ font = ImageFont.truetype(font_path, 40)
 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 frame_list = []
+modify_frame_count = int(fps * 2)
 for i in range(frame_total):
     ret, frame = cap.read()
     if not ret:
@@ -75,7 +76,8 @@ for i in range(frame_total):
     print(f"Frame {i} @ time: {i/fps:.3f}s", end=" - ")
 
     # Replace only first 1s (fps frames)
-    if i <= fps + 2:
+    # if i <= fps + 2:
+    if i < modify_frame_count:
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image_pil = Image.fromarray(frame_rgb)
         draw = ImageDraw.Draw(image_pil)
@@ -88,8 +90,10 @@ for i in range(frame_total):
         final_frame = frame
         print(f"Keeping frame {i} as is")
 
-    out_path = os.path.join(temp_dir, f"frame_{i:04}.jpg")
-    cv2.imwrite(out_path, final_frame)
+    out_path = os.path.join(temp_dir, f"frame_{i:04}.png")
+    # cv2.imwrite(out_path, final_frame)
+    cv2.imwrite(out_path, final_frame, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+
     frame_list.append(out_path)
 
 cap.release()
@@ -101,6 +105,14 @@ os.system(f"ffmpeg -y -i {video_path} -vn -acodec copy {temp_audio}")
 # Build video from frames
 clip = ImageSequenceClip(frame_list, fps=fps)
 clip = clip.with_audio(AudioFileClip(temp_audio))
-clip.write_videofile(output_video, codec="libx264", audio_codec="aac", bitrate="3000k")
+clip.write_videofile(
+    output_video,
+    codec="libx264",
+    audio_codec="aac",
+    # bitrate="3000k",
+    # ffmpeg_params=["-x264opts", "keyint=1"],
+    ffmpeg_params=["-crf", "18", "-preset", "slow", "-x264opts", "keyint=1"],
+)
+
 
 print("✅ Flicker-free video saved at:", output_video)
