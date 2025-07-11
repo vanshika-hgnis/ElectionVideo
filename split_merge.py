@@ -12,21 +12,27 @@ split_2 = "p2.mp4"
 merged_output = "merged_output.mp4"
 
 # Split time in seconds
-split_time = 2
+split_time = 3
+
 
 # --- STEP 1: Split Video ---
 def split_video():
     # First part
-    cmd1 = ffmpeg.input(input_video, ss=0, t=split_time)\
-        .output(split_1, c='copy')\
+    cmd1 = (
+        ffmpeg.input(input_video, ss=0, t=split_time)
+        .output(split_1, c="copy")
         .compile(cmd=ffmpeg_path)
+    )
     subprocess.run(cmd1)
 
     # Second part
-    cmd2 = ffmpeg.input(input_video, ss=3)\
-        .output(split_2, c='copy')\
+    cmd2 = (
+        ffmpeg.input(input_video, ss=4)
+        .output(split_2, c="copy")
         .compile(cmd=ffmpeg_path)
+    )
     subprocess.run(cmd2)
+
 
 # --- STEP 2: Merge Video ---
 def merge_videos():
@@ -36,13 +42,18 @@ def merge_videos():
 
     merge_cmd = [
         ffmpeg_path,
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "files.txt",
-        "-c", "copy",
-        merged_output
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        "files.txt",
+        "-c",
+        "copy",
+        merged_output,
     ]
     subprocess.run(merge_cmd)
+
 
 # --- MAIN ---
 if __name__ == "__main__":

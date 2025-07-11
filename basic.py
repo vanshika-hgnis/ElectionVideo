@@ -1,77 +1,106 @@
 import cv2
-import pytesseract
-from PIL import Image, ImageDraw, ImageFont
+import pandas as pd
 import numpy as np
+import os
+from PIL import Image, ImageDraw, ImageFont
+from moviepy import *
+import shutil
 
-# CONFIG
-image_path = "frame.png"
-target_text = "ब्रजेश"
-replacement_text = "वंशिका"
-font_path = "font/Mukta-Bold.ttf"
+# Config
+video_path = "data/p1.mp4"
+excel_path = "data.xlsx"
+output_video = "data/output_video.mp4"
+font_path = "font/NotoSansDevanagari-Regular.ttf"
+temp_dir = "temp_frames"
+replacement_index = 0
 
-# (Optional) Only for Windows users
-pytesseract.pytesseract.tesseract_cmd = 'D:/C-Drive/Tesseract-OCR/tesseract.exe'
+# Load name from Excel
+df = pd.read_excel(excel_path)
+replacement_word = df.iloc[replacement_index]["Name"]
 
-# STEP 1: Load Image
-image_cv = cv2.imread(image_path)
-image_rgb = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
+# Setup temp folder
+shutil.rmtree(temp_dir, ignore_errors=True)
+os.makedirs(temp_dir, exist_ok=True)
 
-# STEP 2: OCR - Hindi Text Detection
-ocr_data = pytesseract.image_to_data(image_rgb, lang='hin', config='--psm 6', output_type=pytesseract.Output.DICT)
+# Read video
+cap = cv2.VideoCapture(video_path)
+fps = int(cap.get(cv2.CAP_PROP_FPS))
+frame_total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-# STEP 3: Search for Target Word
-box = None
-for i, word in enumerate(ocr_data['text']):
-    if target_text in word:
-        x = ocr_data['left'][i]
-        y = ocr_data['top'][i]
-        w = ocr_data['width'][i]
-        h = ocr_data['height'][i]
-        box = (x, y, w, h)
+# Get first frame for box selection
+ret, first_frame = cap.read()
+if not ret:
+    raise Exception("Failed to read first frame")
+
+clone = first_frame.copy()
+bbox = []
+
+
+def click_and_crop(event, x, y, flags, param):
+    global bbox
+    if event == cv2.EVENT_LBUTTONDOWN:
+        bbox = [(x, y)]
+    elif event == cv2.EVENT_LBUTTONUP:
+        bbox.append((x, y))
+        cv2.rectangle(clone, bbox[0], bbox[1], (0, 255, 0), 2)
+        cv2.imshow("Draw", clone)
+
+
+cv2.namedWindow("Draw")
+cv2.setMouseCallback("Draw", click_and_crop)
+print("Draw a box on the word to replace, then press any key.")
+
+while True:
+    cv2.imshow("Draw", clone)
+    if cv2.waitKey(1) & 0xFF != 255:
         break
 
-if not box:
-    print("❌ Target text not found via OCR.")
-    exit()
-
-x, y, w, h = box
-
-# STEP 4: Background Patch Sampling + Blending
-patch = image_cv[y:y+h, x:x+w].copy()
-blurred_patch = cv2.GaussianBlur(patch, (7, 7), 0)
-image_cv[y:y+h, x:x+w] = blurred_patch
-
-# STEP 5: Text Rendering (PIL)
-image_pil = Image.fromarray(cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB))
-draw = ImageDraw.Draw(image_pil)
-
-# Helper: Best font fit
-def get_best_fit_font(text, box_w, box_h, font_path):
-    font_size = 10
-    while True:
-        font = ImageFont.truetype(font_path, font_size)
-        bbox = font.getbbox(text)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-        if text_w >= box_w or text_h >= box_h:
-            break
-        font_size += 1
-    return ImageFont.truetype(font_path, font_size - 1)
-
-font = get_best_fit_font(replacement_text, w, h, font_path)
-
-# STEP 6: Center Text Precisely (baseline aware)
-tb = draw.textbbox((0, 0), replacement_text, font=font)
-tw, th = tb[2] - tb[0], tb[3] - tb[1]
-tx = x + (w - tw) // 2
-ty = y + (h - th) // 2 - tb[1]  # align to baseline
-
-draw.text((tx, ty), replacement_text, font=font, fill=(62, 198, 255))  # sky blue
-
-# STEP 7: Save & Show
-final_image = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
-cv2.imshow("Modified", final_image)
-cv2.imwrite("output_ocr_modified.jpg", final_image)
-print("✅ Output saved to output_ocr_modified.jpg")
-cv2.waitKey(0)
 cv2.destroyAllWindows()
+
+if len(bbox) != 2:
+    raise Exception("Bounding box not selected")
+
+(x1, y1), (x2, y2) = bbox
+font = ImageFont.truetype(font_path, 40)
+
+# Rewind to beginning
+cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+frame_list = []
+for i in range(frame_total):
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    print(f"Frame {i} @ time: {i/fps:.3f}s", end=" - ")
+
+    # Replace only first 1s (fps frames)
+    if i <= fps + 2:
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image_pil = Image.fromarray(frame_rgb)
+        draw = ImageDraw.Draw(image_pil)
+
+        draw.rectangle([x1, y1, x2, y2], fill="white")
+        draw.text((x1 + 5, y1 + 5), replacement_word, font=font, fill="black")
+        final_frame = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+        print(f"Modifying frame {i}")
+    else:
+        final_frame = frame
+        print(f"Keeping frame {i} as is")
+
+    out_path = os.path.join(temp_dir, f"frame_{i:04}.jpg")
+    cv2.imwrite(out_path, final_frame)
+    frame_list.append(out_path)
+
+cap.release()
+
+# Extract original audio
+temp_audio = "temp_audio.aac"
+os.system(f"ffmpeg -y -i {video_path} -vn -acodec copy {temp_audio}")
+
+# Build video from frames
+clip = ImageSequenceClip(frame_list, fps=fps)
+clip = clip.with_audio(AudioFileClip(temp_audio))
+clip.write_videofile(output_video, codec="libx264", audio_codec="aac", bitrate="3000k")
+
+print("✅ Flicker-free video saved at:", output_video)
