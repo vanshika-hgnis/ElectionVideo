@@ -9,7 +9,7 @@ import shutil
 # Config
 video_path = "data/p1.mp4"
 excel_path = "data.xlsx"
-output_video = "data/output_video1.mp4"
+output_video = "data/output_video_audio_trial1.mp4"
 font_path = "font/NotoSansDevanagari-Regular.ttf"
 temp_dir = "temp_frames"
 replacement_index = 0
@@ -99,7 +99,8 @@ for i in range(frame_total):
 cap.release()
 
 # Extract original audio
-temp_audio = "temp_audio.aac"
+# temp_audio = "temp_audio.aac"
+temp_audio = "modified_audio.m4a"  # Use .m4a for better compatibility
 os.system(f"ffmpeg -y -i {video_path} -vn -acodec copy {temp_audio}")
 
 # Build video from frames

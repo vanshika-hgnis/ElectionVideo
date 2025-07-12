@@ -3,4 +3,7 @@ pillow
 matplotlib
 ffmpeg-python
 pytesseract 
+pydub
 openpyxl
+gtts
+edge_tts
