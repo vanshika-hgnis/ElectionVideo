@@ -13,16 +13,16 @@ import edge_tts
 
 # --- Configuration ---
 ffmpeg_path = r"D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe"
-input_video = "input/input.mp4"
-split_1 = "data/p1.mp4"
-split_2 = "data/p2.mp4"
-merged_output = "data/merged_output.mp4"
+input_video = "Example/input.mp4"
+split_1 = "Example/p1.mp4"
+split_2 = "Example/p2.mp4"
+merged_output = "Example/merged_output.mp4"
 split_time = 3  # in seconds
 
 # Paths for processing
 temp_dir = "temp_frames"
 font_path = "font/NotoSansDevanagari-Bold.ttf"
-excel_path = "data.xlsx"
+excel_path = "Example/data.xlsx"
 replacement_index = 0
 original_audio_path = "temp_audio.aac"
 modified_audio_path = "modified_audio.m4a"
@@ -41,13 +41,20 @@ def split_video():
         .compile(cmd=ffmpeg_path)
     )
     subprocess.run(cmd1)
+    if not os.path.exists(tts_audio_wav):
+        raise Exception(
+            "❌ TTS audio file not found! Generate it before splitting part2."
+        )
 
+    replacement_audio = AudioSegment.from_wav(tts_audio_wav)
+    tts_duration_sec = len(replacement_audio) / 1000.0
+    split_time_for_part2 = (
+        1 + tts_duration_sec + 0.5
+    )  # 1s TTS start + duration + buffer
     # Second part
-    cmd2 = (
-        ffmpeg.input(input_video, ss=split_time)
-        .output(split_2, c="copy")
-        .compile(cmd=ffmpeg_path)
-    )
+    print(f"🔄 Splitting second part from {split_time_for_part2:.2f}s...")
+    cmd2 = f'"{ffmpeg_path}" -y -ss {split_time_for_part2:.2f} -i "{input_video}" -c:v libx264 -preset fast -crf 23 -c:a aac "{split_2}"'
+    subprocess.run(cmd2)
     subprocess.run(cmd2)
 
 
@@ -191,9 +198,8 @@ def merge_videos():
     subprocess.run(merge_cmd)
 
 
-# --- MAIN ---
 if __name__ == "__main__":
-    print("🔧 Step 1: Splitting video...")
+    print("🔧 Step 1: Splitting video (generate p1.mp4)...")
     split_video()
 
     print("🎬 Step 2: Modifying part1 (visual + audio)...")
