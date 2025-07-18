@@ -11,73 +11,74 @@ from moviepy import *
 from pydub import AudioSegment
 import edge_tts
 
-# --- Configuration ---
+# Configuration
 ffmpeg_path = r"D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe"
 input_video = "Example/input.mp4"
-split_1 = "Example/p1.mp4"
-split_2 = "Example/p2.mp4"
-merged_output = "Example/merged_output.mp4"
-split_time = 3  # in seconds
-
-# Paths for processing
 temp_dir = "temp_frames"
 font_path = "font/NotoSansDevanagari-Bold.ttf"
 excel_path = "Example/data.xlsx"
-replacement_index = 0
-original_audio_path = "temp_audio.aac"
-modified_audio_path = "modified_audio.m4a"
-tts_audio_mp3 = "tts_audio.mp3"
-tts_audio_wav = "tts_audio.wav"
 replacement_text_template = "{} जी नमस्कार"
 target_font_color = (59, 180, 255)
-duration_to_modify = 2
+duration_to_modify = 2  # in seconds
+split_time = 3  # in seconds
 
 
-def split_video():
+# Utility: Cleanup temporary files
+def cleanup_temp():
+    for f in [
+        "p1.mp4",
+        "p2.mp4",
+        "temp_audio.aac",
+        "tts_audio.mp3",
+        "tts_audio.wav",
+        "modified_audio.m4a",
+        "files.txt",
+    ]:
+        try:
+            os.remove(f)
+        except FileNotFoundError:
+            pass
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# Step 1: Generate TTS
+async def generate_tts(text):
+    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
+    await communicate.save("tts_audio.mp3")
+
+
+# Step 2: Split original video
+def split_video(tts_wav_path):
     # First part
     cmd1 = (
         ffmpeg.input(input_video, ss=0, t=split_time)
-        .output(split_1, c="copy")
+        .output("p1.mp4", c="copy")
         .compile(cmd=ffmpeg_path)
     )
     subprocess.run(cmd1)
-    if not os.path.exists(tts_audio_wav):
-        raise Exception(
-            "❌ TTS audio file not found! Generate it before splitting part2."
-        )
 
-    replacement_audio = AudioSegment.from_wav(tts_audio_wav)
+    # Second part (start after TTS)
+    replacement_audio = AudioSegment.from_wav(tts_wav_path)
     tts_duration_sec = len(replacement_audio) / 1000.0
-    split_time_for_part2 = (
-        1 + tts_duration_sec + 0.5
-    )  # 1s TTS start + duration + buffer
-    # Second part
-    print(f"🔄 Splitting second part from {split_time_for_part2:.2f}s...")
-    cmd2 = f'"{ffmpeg_path}" -y -ss {split_time_for_part2:.2f} -i "{input_video}" -c:v libx264 -preset fast -crf 23 -c:a aac "{split_2}"'
-    subprocess.run(cmd2)
+    split_time_for_part2 = 1 + tts_duration_sec + 0.5
+
+    cmd2 = f'"{ffmpeg_path}" -y -ss {split_time_for_part2:.2f} -i "{input_video}" -c:v libx264 -preset fast -crf 23 -c:a aac "p2.mp4"'
     subprocess.run(cmd2)
 
 
-async def generate_tts(text):
-    communicate = edge_tts.Communicate(
-        text=text, voice="hi-IN-MadhurNeural", rate="+0%"
-    )
-    await communicate.save(tts_audio_mp3)
-
-
-def modify_p1():
-    df = pd.read_excel(excel_path)
-    replacement_word = df.iloc[replacement_index]["Name"]
-    replacement_text = replacement_text_template.format(replacement_word)
+# Step 3: Modify first part (overlay name and TTS audio)
+def modify_p1(name, output_folder):
+    replacement_text = replacement_text_template.format(name)
 
     # Setup temp frame directory
     shutil.rmtree(temp_dir, ignore_errors=True)
     os.makedirs(temp_dir, exist_ok=True)
 
-    cap = cv2.VideoCapture(split_1)
+    cap = cv2.VideoCapture("p1.mp4")
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     frame_total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    # Get user bounding box once
     ret, first_frame = cap.read()
     if not ret:
         raise Exception("❌ Failed to read first frame")
@@ -108,7 +109,6 @@ def modify_p1():
     (x1, y1), (x2, y2) = bbox
     box_w, box_h = x2 - x1, y2 - y1
 
-    # Reset and start processing
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     frame_list = []
     modify_frame_count = int(fps * duration_to_modify)
@@ -124,25 +124,26 @@ def modify_p1():
             shadow = frame.copy()
             cv2.rectangle(shadow, (x1, y1), (x2, y2), (0, 0, 0), -1)
             frame = cv2.addWeighted(shadow, 0.4, frame, 0.6, 0)
+
             image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(image_pil)
 
             font_size = 10
             while True:
                 test_font = ImageFont.truetype(font_path, font_size)
-                bbox_text = test_font.getbbox(replacement_word)
+                bbox_text = test_font.getbbox(name)
                 tw = bbox_text[2] - bbox_text[0]
                 th = bbox_text[3] - bbox_text[1]
                 if tw > box_w - 10 or th > box_h - 10:
                     break
                 font_size += 1
             font = ImageFont.truetype(font_path, font_size - 1)
-            bbox_text = font.getbbox(replacement_word)
+            bbox_text = font.getbbox(name)
             tw = bbox_text[2] - bbox_text[0]
             th = bbox_text[3] - bbox_text[1]
             tx = x1 + (box_w - tw) // 2
             ty = y1 + (box_h - th) // 2 - 3
-            draw.text((tx, ty), replacement_word, font=font, fill=target_font_color)
+            draw.text((tx, ty), name, font=font, fill=target_font_color)
             final_frame = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
         else:
             final_frame = frame
@@ -153,35 +154,31 @@ def modify_p1():
 
     cap.release()
 
-    # Extract audio
-    os.system(f'ffmpeg -y -i "{split_1}" -vn -acodec copy "{original_audio_path}"')
+    # Audio Extraction
+    os.system(f'ffmpeg -y -i "p1.mp4" -vn -acodec copy "temp_audio.aac"')
 
     # Generate TTS
     asyncio.run(generate_tts(replacement_text))
-    os.system(f'ffmpeg -y -i "{tts_audio_mp3}" "{tts_audio_wav}"')
+    os.system(f'ffmpeg -y -i "tts_audio.mp3" "tts_audio.wav"')
 
-    # Replace audio at 1s
-    original = AudioSegment.from_file(original_audio_path)
-    replacement = AudioSegment.from_wav(tts_audio_wav).set_frame_rate(44100)
+    # Audio Replacement
+    original = AudioSegment.from_file("temp_audio.aac")
+    replacement = AudioSegment.from_wav("tts_audio.wav").set_frame_rate(44100)
     final_audio = original[:1000] + replacement + original[1000 + len(replacement) :]
-    final_audio.export(modified_audio_path, format="ipod")
+    final_audio.export("modified_audio.m4a", format="ipod")
 
-    # Generate final modified p1.mp4
+    # Write modified video
     clip = ImageSequenceClip(frame_list, fps=fps).with_audio(
-        AudioFileClip(modified_audio_path)
+        AudioFileClip("modified_audio.m4a")
     )
-    clip.write_videofile(
-        split_1,
-        codec="libx264",
-        audio_codec="aac",
-        ffmpeg_params=["-crf", "18", "-preset", "slow", "-x264opts", "keyint=1"],
-    )
+    clip.write_videofile("p1.mp4", codec="libx264", audio_codec="aac")
 
 
-def merge_videos():
+# Step 4: Merge p1 + p2
+def merge_videos(output_path):
     with open("files.txt", "w") as f:
-        f.write(f"file '{split_1}'\n")
-        f.write(f"file '{split_2}'\n")
+        f.write("file 'p1.mp4'\n")
+        f.write("file 'p2.mp4'\n")
 
     merge_cmd = [
         ffmpeg_path,
@@ -193,19 +190,34 @@ def merge_videos():
         "files.txt",
         "-c",
         "copy",
-        merged_output,
+        output_path,
     ]
     subprocess.run(merge_cmd)
 
 
+# --- MAIN ---
 if __name__ == "__main__":
-    print("🔧 Step 1: Splitting video (generate p1.mp4)...")
-    split_video()
+    df = pd.read_excel(excel_path)
+    for idx, row in df.iterrows():
+        name = str(row["Name"]).strip()
+        mobile = str(row["Mobile"]).strip()
+        output_folder = os.path.join("output", f"{name}_{mobile}")
+        os.makedirs(output_folder, exist_ok=True)
 
-    print("🎬 Step 2: Modifying part1 (visual + audio)...")
-    modify_p1()
+        print(f"\n🔧 Generating video for: {name} ({mobile})")
+        print("🎬 Step 1: Generate TTS + split...")
+        asyncio.run(generate_tts(replacement_text_template.format(name)))
+        os.system('ffmpeg -y -i "tts_audio.mp3" "tts_audio.wav"')
+        split_video("tts_audio.wav")
 
-    print("🔗 Step 3: Merging with second half...")
-    merge_videos()
+        print("🎨 Step 2: Modify visual/audio...")
+        modify_p1(name, output_folder)
 
-    print(f"✅ Done! Final output saved as: {merged_output}")
+        print("🔗 Step 3: Merge parts...")
+        final_output = os.path.join(output_folder, "final.mp4")
+        merge_videos(final_output)
+
+        print(f"🧹 Cleaning up...")
+        cleanup_temp()
+
+    print("\n✅ All videos generated in /output/")
