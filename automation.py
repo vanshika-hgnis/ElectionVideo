@@ -1,4 +1,5 @@
 import os
+import json
 import cv2
 import ffmpeg
 import asyncio
@@ -11,19 +12,57 @@ from moviepy import *
 from pydub import AudioSegment
 import edge_tts
 
-# Configuration
-ffmpeg_path = r"D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe"
-input_video = "Example/input.mp4"
-temp_dir = "temp_frames"
-font_path = "font/NotoSansDevanagari-Bold.ttf"
-excel_path = "Example/data.xlsx"
-replacement_text_template = "{} जी नमस्कार"
-target_font_color = (59, 180, 255)
-duration_to_modify = 2
-split_time = 3
+# ---------- Load config.json ----------
+CONFIG_FILE = "config.json"
+if not os.path.exists(CONFIG_FILE):
+    default_config = {
+        "ffmpeg_path": "D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe",
+        "input_video": "Example/input.mp4",
+        "output_dir": "Example/",
+        "temp_frames_dir": "temp_frames",
+        "excel_path": "Example/data.xlsx",
+        "replacement_index": 0,
+        "replacement_text_template": "{} जी नमस्कार",
+        "font_path": "font/NotoSansDevanagari-Bold.ttf",
+        "target_font_color": [59, 180, 255],
+        "split_part1_start": 0,
+        "split_part1_end": 3,
+        "tts_insert_time": 1.0,
+        "extra_buffer_after_tts": 0.5,
+        "blur_duration": 2,
+        "video_crf": 18,
+        "video_preset": "slow",
+        "tts_voice": "hi-IN-MadhurNeural",
+        "tts_rate": "+0%",
+    }
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(default_config, f, indent=2)
+    print("🛠️ 'config.json' created. Please configure it and re-run the script.")
+    exit()
 
-# Global bounding box (to reuse)
-global_bbox = None
+with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+    config = json.load(f)
+
+# ---------- Config Parameters ----------
+ffmpeg_path = config["ffmpeg_path"]
+input_video = config["input_video"]
+output_dir = config["output_dir"]
+temp_dir = config["temp_frames_dir"]
+excel_path = config["excel_path"]
+replacement_template = config["replacement_text_template"]
+font_path = config["font_path"]
+font_color = tuple(config["target_font_color"])
+split_start = config["split_part1_start"]
+split_end = config["split_part1_end"]
+tts_insert_time = config["tts_insert_time"]
+extra_buffer = config["extra_buffer_after_tts"]
+blur_duration = config["blur_duration"]
+video_crf = config["video_crf"]
+video_preset = config["video_preset"]
+tts_voice = config["tts_voice"]
+tts_rate = config["tts_rate"]
+
+global_bbox = None  # For reuse
 
 
 def cleanup_temp():
@@ -38,29 +77,31 @@ def cleanup_temp():
     ]:
         try:
             os.remove(f)
-        except FileNotFoundError:
+        except:
             pass
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def generate_tts(text):
-    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
+    communicate = edge_tts.Communicate(text=text, voice=tts_voice, rate=tts_rate)
     await communicate.save("tts_audio.mp3")
 
 
 def split_video(tts_wav_path):
+    # Part 1
     cmd1 = (
-        ffmpeg.input(input_video, ss=0, t=split_time)
+        ffmpeg.input(input_video, ss=split_start, t=split_end - split_start)
         .output("p1.mp4", c="copy")
         .compile(cmd=ffmpeg_path)
     )
     subprocess.run(cmd1)
 
+    # Part 2
     replacement_audio = AudioSegment.from_wav(tts_wav_path)
-    tts_duration_sec = len(replacement_audio) / 1000.0
-    split_time_for_part2 = 1 + tts_duration_sec + 0.5
+    tts_duration = len(replacement_audio) / 1000.0
+    part2_start = tts_insert_time + tts_duration + extra_buffer
 
-    cmd2 = f'"{ffmpeg_path}" -y -ss {split_time_for_part2:.2f} -i "{input_video}" -c:v libx264 -preset fast -crf 23 -c:a aac "p2.mp4"'
+    cmd2 = f'"{ffmpeg_path}" -y -ss {part2_start:.2f} -i "{input_video}" -c:v libx264 -preset {video_preset} -crf {video_crf} -c:a aac "p2.mp4"'
     subprocess.run(cmd2)
 
 
@@ -79,22 +120,21 @@ def get_bbox_from_user(frame):
 
     cv2.namedWindow("Draw")
     cv2.setMouseCallback("Draw", click_and_crop)
-    print("📍 Draw a box around the original name and press any key")
+    print("📍 Draw a box around the name and press any key...")
     while True:
         cv2.imshow("Draw", clone)
         if cv2.waitKey(1) & 0xFF != 255:
             break
     cv2.destroyAllWindows()
-
     if len(bbox) != 2:
-        raise Exception("❌ Bounding box not selected properly.")
+        raise Exception("❌ Bounding box selection failed.")
     return bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1]
 
 
 def modify_p1(name, output_folder):
     global global_bbox
 
-    replacement_text = replacement_text_template.format(name)
+    replacement_text = replacement_template.format(name)
     shutil.rmtree(temp_dir, ignore_errors=True)
     os.makedirs(temp_dir, exist_ok=True)
 
@@ -104,19 +144,15 @@ def modify_p1(name, output_folder):
 
     ret, first_frame = cap.read()
     if not ret:
-        raise Exception("❌ Failed to read first frame")
-
+        raise Exception("❌ Failed to read video")
     if global_bbox is None:
-        x1, y1, x2, y2 = get_bbox_from_user(first_frame)
-        global_bbox = (x1, y1, x2, y2)
-    else:
-        x1, y1, x2, y2 = global_bbox
-
+        global_bbox = get_bbox_from_user(first_frame)
+    x1, y1, x2, y2 = global_bbox
     box_w, box_h = x2 - x1, y2 - y1
 
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    modify_frame_count = int(fps * blur_duration)
     frame_list = []
-    modify_frame_count = int(fps * duration_to_modify)
 
     for i in range(frame_total):
         ret, frame = cap.read()
@@ -129,7 +165,6 @@ def modify_p1(name, output_folder):
             shadow = frame.copy()
             cv2.rectangle(shadow, (x1, y1), (x2, y2), (0, 0, 0), -1)
             frame = cv2.addWeighted(shadow, 0.4, frame, 0.6, 0)
-
             image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(image_pil)
 
@@ -143,28 +178,29 @@ def modify_p1(name, output_folder):
                     break
                 font_size += 1
             font = ImageFont.truetype(font_path, font_size - 1)
-            bbox_text = font.getbbox(name)
-            tw = bbox_text[2] - bbox_text[0]
-            th = bbox_text[3] - bbox_text[1]
             tx = x1 + (box_w - tw) // 2
             ty = y1 + (box_h - th) // 2 - 3
-            draw.text((tx, ty), name, font=font, fill=target_font_color)
+            draw.text((tx, ty), name, font=font, fill=font_color)
             final_frame = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
         else:
             final_frame = frame
 
         out_path = os.path.join(temp_dir, f"frame_{i:04}.png")
-        cv2.imwrite(out_path, final_frame, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+        cv2.imwrite(out_path, final_frame)
         frame_list.append(out_path)
-
     cap.release()
+
     os.system(f'ffmpeg -y -i "p1.mp4" -vn -acodec copy "temp_audio.aac"')
     asyncio.run(generate_tts(replacement_text))
     os.system(f'ffmpeg -y -i "tts_audio.mp3" "tts_audio.wav"')
 
     original = AudioSegment.from_file("temp_audio.aac")
     replacement = AudioSegment.from_wav("tts_audio.wav").set_frame_rate(44100)
-    final_audio = original[:1000] + replacement + original[1000 + len(replacement) :]
+    final_audio = (
+        original[: int(tts_insert_time * 1000)]
+        + replacement
+        + original[int(tts_insert_time * 1000) + len(replacement) :]
+    )
     final_audio.export("modified_audio.m4a", format="ipod")
 
     clip = ImageSequenceClip(frame_list, fps=fps).with_audio(
@@ -193,28 +229,25 @@ def merge_videos(output_path):
     )
 
 
+# ---------- MAIN ----------
 if __name__ == "__main__":
     df = pd.read_excel(excel_path)
     for idx, row in df.iterrows():
         name = str(row["Name"]).strip()
         mobile = str(row["Mobile"]).strip()
-        output_folder = os.path.join("output", f"{name}_{mobile}")
+        output_folder = os.path.join(output_dir, f"{name}_{mobile}")
         os.makedirs(output_folder, exist_ok=True)
 
-        print(f"\n🔧 Generating video for: {name} ({mobile})")
-        print("🎬 Step 1: Generate TTS + split...")
-        asyncio.run(generate_tts(replacement_text_template.format(name)))
+        print(f"\n🎯 Generating for: {name} ({mobile})")
+        asyncio.run(generate_tts(replacement_template.format(name)))
         os.system('ffmpeg -y -i "tts_audio.mp3" "tts_audio.wav"')
         split_video("tts_audio.wav")
 
-        print("🎨 Step 2: Modify visual/audio...")
         modify_p1(name, output_folder)
+        final_path = os.path.join(output_folder, "final.mp4")
+        merge_videos(final_path)
 
-        print("🔗 Step 3: Merge parts...")
-        final_output = os.path.join(output_folder, "final.mp4")
-        merge_videos(final_output)
-
-        print(f"🧹 Cleaning up...")
+        print(f"✅ Saved: {final_path}")
         cleanup_temp()
 
-    print("\n✅ All videos generated in /output/")
+    print("\n✅ All done.")
