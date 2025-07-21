@@ -1,30 +1,18 @@
 {
-  "ffmpeg_path": "D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe",
-  "input_video": "Example/input.mp4",
-  "output_dir": "Example/",
-  "temp_frames_dir": "temp_frames",
   "excel_path": "Example/data.xlsx",
-  "replacement_index": 0,
-  "replacement_text_template": "{} \u091c\u0940 \u0928\u092e\u0938\u094d\u0915\u093e\u0930",
+  "input_video": "Example/input.mp4",
   "font_path": "font/NotoSansDevanagari-Bold.ttf",
+  "replacement_text_template": "{} \u091c\u0940 \u0928\u092e\u0938\u094d\u0915\u093e\u0930",
+  "tts_voice": "hi-IN-MadhurNeural",
   "target_font_color": [
     59,
     180,
     255
   ],
-  "split_part1_start": 0,
-  "split_part1_end": 3,
+  "bbox": null,
+  "split_part1_start": 0.0,
+  "split_part1_end": 3.0,
   "tts_insert_time": 1.0,
-  "extra_buffer_after_tts": 0.5,
-  "blur_duration": 2,
-  "video_crf": 18,
-  "video_preset": "slow",
-  "tts_voice": "hi-IN-MadhurNeural",
-  "tts_rate": "+0%",
-  "bbox": [
-    10,
-    111,
-    60,
-    134
-  ]
+  "blur_duration": 2.0,
+  "ffmpeg_path": "D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe"
 }
