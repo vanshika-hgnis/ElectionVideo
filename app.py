@@ -3,6 +3,7 @@ import json
 import shutil
 import asyncio
 import subprocess
+import sys
 import pandas as pd
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -26,6 +27,7 @@ import cv2
 import edge_tts
 from moviepy import *
 from pydub import AudioSegment
+from video_processor import VideoProcessor
 
 CONFIG_FILE = "config.json"
 
@@ -87,6 +89,7 @@ class VideoApp(QWidget):
         self.insert_time = QLineEdit(str(self.config.get("tts_insert_time", 1)))
         self.blur_duration = QLineEdit(str(self.config.get("blur_duration", 2)))
         self.ffmpeg_path = QLineEdit(str(self.config.get("ffmpeg_path", "ffmpeg")))
+        self.bbox_time = QLineEdit(str(self.config.get("bbox_time", 0)))  # new
 
         self.image_view = CropLabel(self)
         self.image_view.setFixedHeight(400)
@@ -101,6 +104,7 @@ class VideoApp(QWidget):
         layout.addLayout(self.row("Text Template", self.template_text))
         layout.addLayout(self.row("TTS Voice", self.voice_name))
         layout.addWidget(self.font_color_btn)
+        layout.addLayout(self.row("Bounding Box Time (s)", self.bbox_time))
         layout.addWidget(QLabel("Draw Bounding Box on First Frame:"))
         layout.addWidget(self.image_view)
         layout.addLayout(self.row("Split Start Time", self.split_start))
@@ -180,6 +184,11 @@ class VideoApp(QWidget):
         if not video or not os.path.exists(video):
             return
         cap = cv2.VideoCapture(video)
+        try:
+            bbox_time_sec = float(self.bbox_time.text())
+        except ValueError:
+            bbox_time_sec = 0
+        cap.set(cv2.CAP_PROP_POS_MSEC, bbox_time_sec * 1000)
         ret, frame = cap.read()
         if ret:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -205,6 +214,7 @@ class VideoApp(QWidget):
             "tts_insert_time": 1,
             "blur_duration": 2,
             "ffmpeg_path": "ffmpeg",
+            "bbox_time": 0,
         }
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -228,6 +238,7 @@ class VideoApp(QWidget):
             "tts_insert_time": float(self.insert_time.text()),
             "blur_duration": float(self.blur_duration.text()),
             "ffmpeg_path": self.ffmpeg_path.text(),
+            "bbox_time": float(self.bbox_time.text()),
         }
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(self.config, f, indent=2)
@@ -244,14 +255,18 @@ class VideoApp(QWidget):
             self.log.append("<span style='color:red;'>❌ Font file not found.</span>")
             return
         self.save_config()
-        self.log.append("🚀 Starting generation...")
-        self.run_final_script()
+        self.log.append("🛠 Starting integrated video generation...")
+
+        processor = VideoProcessor(self.config, self.log.append)
+        processor.process_all()
+
+        self.log.append("<span style='color:green;'>✅ All done!</span>")
 
     def run_final_script(self):
         self.log.append("🔄 Running finalscript.py...")
         self.log.repaint()
         process = subprocess.Popen(
-            ["python", "finalscript.py"],
+            [sys.executable, "finalscript.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=1,

@@ -7,3 +7,4 @@ pydub
 openpyxl
 gtts
 edge_tts
+pyqt5

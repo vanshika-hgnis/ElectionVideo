@@ -9,10 +9,16 @@
     180,
     255
   ],
-  "bbox": null,
+  "bbox": [
+    66,
+    97,
+    183,
+    156
+  ],
   "split_part1_start": 0.0,
   "split_part1_end": 3.0,
   "tts_insert_time": 1.0,
   "blur_duration": 2.0,
-  "ffmpeg_path": "D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe"
+  "ffmpeg_path": "D:/C-Drive/ffmpeg-7.1.1-full_build/bin/ffmpeg.exe",
+  "bbox_time": 0.0
 }
