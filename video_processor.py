@@ -1,5 +1,3 @@
-# File: video_processor.py
-
 import os
 import cv2
 import asyncio
@@ -40,15 +38,28 @@ class VideoProcessor:
         shutil.rmtree("temp_frames", ignore_errors=True)
 
     async def generate_tts(self, text):
+        self.log_msg(f"🗣️ Generating TTS for: {text}")
         communicate = edge_tts.Communicate(text=text, voice=self.config["tts_voice"])
         await communicate.save("tts_audio.mp3")
+        self.log_msg("✅ TTS saved to tts_audio.mp3")
+
+    def run_command(self, command):
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
+        for line in process.stdout:
+            self.log_msg(line.strip())
+        process.wait()
 
     def split_video(self, tts_wav_path):
         ffmpeg_path = self.config["ffmpeg_path"]
         input_video = self.config["input_video"]
         split_time = self.config["split_part1_end"]
 
-        subprocess.run(
+        self.run_command(
             [
                 ffmpeg_path,
                 "-y",
@@ -68,7 +79,7 @@ class VideoProcessor:
         tts_duration_sec = len(replacement_audio) / 1000.0
         split_time_for_part2 = 1 + tts_duration_sec + 0.5
 
-        subprocess.run(
+        self.run_command(
             [
                 ffmpeg_path,
                 "-y",
@@ -131,6 +142,15 @@ class VideoProcessor:
                         break
                     font_size += 1
                 font = ImageFont.truetype(font_path, font_size - 1)
+
+                # Corrected positioning logic
+                # dummy_img = Image.new("RGB", (1000, 1000))
+                # dummy_draw = ImageDraw.Draw(dummy_img)
+                # text_bbox = dummy_draw.textbbox((0, 0), name, font=font)
+                # tw = text_bbox[2] - text_bbox[0]
+                # th = text_bbox[3] - text_bbox[1]
+                # tx = x1 + (box_w - tw) // 2
+                # ty = y1 + (box_h - th) // 2
                 bbox_text = font.getbbox(name)
                 tw = bbox_text[2] - bbox_text[0]
                 th = bbox_text[3] - bbox_text[1]
@@ -147,7 +167,7 @@ class VideoProcessor:
 
         cap.release()
 
-        subprocess.run(
+        self.run_command(
             [
                 self.config["ffmpeg_path"],
                 "-y",
@@ -160,7 +180,7 @@ class VideoProcessor:
             ]
         )
         asyncio.run(self.generate_tts(replacement_text))
-        subprocess.run(
+        self.run_command(
             [self.config["ffmpeg_path"], "-y", "-i", "tts_audio.mp3", "tts_audio.wav"]
         )
 
@@ -180,7 +200,7 @@ class VideoProcessor:
         with open("files.txt", "w") as f:
             f.write("file 'p1.mp4'\n")
             f.write("file 'p2.mp4'\n")
-        subprocess.run(
+        self.run_command(
             [
                 self.config["ffmpeg_path"],
                 "-f",
@@ -200,15 +220,15 @@ class VideoProcessor:
         for idx, row in df.iterrows():
             name = str(row["Name"]).strip()
             mobile = str(row["Mobile"]).strip()
-            output_folder = os.path.join("output", f"{name}_{mobile}")
+            base_output = self.config.get("output_folder", "output")
+            output_folder = os.path.join(base_output, f"{name}_{mobile}")
             os.makedirs(output_folder, exist_ok=True)
-
             self.log_msg(f"\n🔧 Generating video for: {name} ({mobile})")
             self.log_msg("🎬 Step 1: Generate TTS + split...")
             asyncio.run(
                 self.generate_tts(self.config["replacement_text_template"].format(name))
             )
-            subprocess.run(
+            self.run_command(
                 [
                     self.config["ffmpeg_path"],
                     "-y",
@@ -218,15 +238,13 @@ class VideoProcessor:
                 ]
             )
             self.split_video("tts_audio.wav")
-
             self.log_msg("🎨 Step 2: Modify visual/audio...")
             self.modify_p1(name, output_folder)
-
             self.log_msg("🔗 Step 3: Merge parts...")
             final_output = os.path.join(output_folder, "final.mp4")
             self.merge_videos(final_output)
-
             self.log_msg("🧹 Cleaning up...")
             self.cleanup_temp()
-
+            print("Using bbox:", self.global_bbox)
+            self.log_msg(f"Using bbox: {self.global_bbox}")
         self.log_msg("\n✅ All videos generated in /output/")

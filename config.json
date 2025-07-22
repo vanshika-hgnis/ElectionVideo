@@ -1,6 +1,7 @@
 {
   "excel_path": "Example/data.xlsx",
   "input_video": "Example/input.mp4",
+  "output_folder": "D:/Project/ElectionVideo/ElectionVideo/output",
   "font_path": "font/NotoSansDevanagari-Bold.ttf",
   "replacement_text_template": "{} \u091c\u0940 \u0928\u092e\u0938\u094d\u0915\u093e\u0930",
   "tts_voice": "hi-IN-MadhurNeural",
@@ -10,10 +11,10 @@
     255
   ],
   "bbox": [
-    66,
-    97,
-    183,
-    156
+    240,
+    367,
+    628,
+    557
   ],
   "split_part1_start": 0.0,
   "split_part1_end": 3.0,

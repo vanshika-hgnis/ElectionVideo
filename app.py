@@ -32,39 +32,21 @@ from video_processor import VideoProcessor
 CONFIG_FILE = "config.json"
 
 
-class CropLabel(QLabel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMouseTracking(True)
-        self.start_point = None
-        self.end_point = None
-        self.rect_color = QColor(0, 255, 0)
-        self.rect = None
+# class CropLabel(QLabel):
+#     def __init__(self, parent=None):
+#         super().__init__(parent)
+#         self.setMouseTracking(True)
+#         self.start_point = None
+#         self.end_point = None
+#         self.rect_color = QColor(0, 255, 0)
+#         self.rect = None
 
-    def mousePressEvent(self, event):
-        self.start_point = event.pos()
-
-    def mouseReleaseEvent(self, event):
-        self.end_point = event.pos()
-        self.rect = QRectF(self.start_point, self.end_point).normalized()
-        self.update()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.rect:
-            painter = QPainter(self)
-            painter.setPen(QPen(self.rect_color, 2))
-            painter.drawRect(self.rect)
-
-    def get_rect(self):
-        if self.rect:
-            return [
-                int(self.rect.left()),
-                int(self.rect.top()),
-                int(self.rect.right()),
-                int(self.rect.bottom()),
-            ]
-        return None
+#     def paintEvent(self, event):
+#         super().paintEvent(event)
+#         if self.rect:
+#             painter = QPainter(self)
+#             painter.setPen(QPen(self.rect_color, 2))
+#             painter.drawRect(self.rect)
 
 
 class VideoApp(QWidget):
@@ -76,6 +58,7 @@ class VideoApp(QWidget):
 
         self.excel_path = QLineEdit(self.config.get("excel_path", ""))
         self.video_path = QLineEdit(self.config.get("input_video", ""))
+        self.output_folder = QLineEdit(self.config.get("output_folder", "output"))
         self.font_path = QLineEdit(self.config.get("font_path", ""))
         self.template_text = QLineEdit(
             self.config.get("replacement_text_template", "{} जी नमस्कार")
@@ -89,9 +72,9 @@ class VideoApp(QWidget):
         self.insert_time = QLineEdit(str(self.config.get("tts_insert_time", 1)))
         self.blur_duration = QLineEdit(str(self.config.get("blur_duration", 2)))
         self.ffmpeg_path = QLineEdit(str(self.config.get("ffmpeg_path", "ffmpeg")))
-        self.bbox_time = QLineEdit(str(self.config.get("bbox_time", 0)))  # new
+        self.bbox_time = QLineEdit(str(self.config.get("bbox_time", 0)))
 
-        self.image_view = CropLabel(self)
+        self.image_view = QLabel(self)
         self.image_view.setFixedHeight(400)
 
         self.log = QTextEdit()
@@ -100,6 +83,9 @@ class VideoApp(QWidget):
         layout = QVBoxLayout()
         layout.addLayout(self.row("Excel File", self.excel_path, self.pick_excel))
         layout.addLayout(self.row("Input Video", self.video_path, self.pick_video))
+        layout.addLayout(
+            self.row("Output Folder", self.output_folder, self.pick_output_folder)
+        )
         layout.addLayout(self.row("Font File", self.font_path, self.pick_font))
         layout.addLayout(self.row("Text Template", self.template_text))
         layout.addLayout(self.row("TTS Voice", self.voice_name))
@@ -127,7 +113,6 @@ class VideoApp(QWidget):
         layout.addWidget(QLabel("Logs"))
         layout.addWidget(self.log)
 
-        # Scrollable area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll_content = QWidget()
@@ -150,6 +135,51 @@ class VideoApp(QWidget):
             h.addWidget(btn)
         return h
 
+    def get_bbox_from_opencv(self):
+        video = self.video_path.text()
+        try:
+            bbox_time = float(self.bbox_time.text())
+        except ValueError:
+            bbox_time = 0.0
+
+        cap = cv2.VideoCapture(video)
+        cap.set(cv2.CAP_PROP_POS_MSEC, bbox_time * 1000)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            QMessageBox.critical(self, "Error", "Could not load frame from video.")
+            return None
+
+        clone = frame.copy()
+        bbox = []
+
+        def click_and_crop(event, x, y, flags, param):
+            nonlocal bbox
+            if event == cv2.EVENT_LBUTTONDOWN:
+                bbox = [(x, y)]
+            elif event == cv2.EVENT_LBUTTONUP:
+                bbox.append((x, y))
+                cv2.rectangle(clone, bbox[0], bbox[1], (0, 255, 0), 2)
+                cv2.imshow("Draw BBox", clone)
+
+        cv2.namedWindow("Draw BBox")
+        cv2.setMouseCallback("Draw BBox", click_and_crop)
+
+        while True:
+            cv2.imshow("Draw BBox", clone)
+            key = cv2.waitKey(1) & 0xFF
+            if key != 255:
+                break
+
+        cv2.destroyAllWindows()
+
+        if len(bbox) == 2:
+            x1, y1 = bbox[0]
+            x2, y2 = bbox[1]
+            return [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+        else:
+            return None
+
     def pick_excel(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Excel File", "", "Excel Files (*.xlsx)"
@@ -165,6 +195,11 @@ class VideoApp(QWidget):
         if path:
             self.video_path.setText(path)
             self.load_first_frame()
+
+    def pick_output_folder(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if path:
+            self.output_folder.setText(path)
 
     def pick_font(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select Font", "", "Fonts (*.ttf)")
@@ -204,6 +239,7 @@ class VideoApp(QWidget):
         default_config = {
             "excel_path": "",
             "input_video": "",
+            "output_folder": "output",
             "font_path": "",
             "replacement_text_template": "{} जी नमस्कार",
             "tts_voice": "hi-IN-MadhurNeural",
@@ -228,11 +264,12 @@ class VideoApp(QWidget):
         self.config = {
             "excel_path": self.excel_path.text(),
             "input_video": self.video_path.text(),
+            "output_folder": self.output_folder.text(),
             "font_path": self.font_path.text(),
             "replacement_text_template": self.template_text.text(),
             "tts_voice": self.voice_name.text(),
             "target_font_color": list(self.font_color),
-            "bbox": self.image_view.get_rect(),
+            "bbox": self.get_bbox_from_opencv(),
             "split_part1_start": float(self.split_start.text()),
             "split_part1_end": float(self.split_end.text()),
             "tts_insert_time": float(self.insert_time.text()),
@@ -261,22 +298,6 @@ class VideoApp(QWidget):
         processor.process_all()
 
         self.log.append("<span style='color:green;'>✅ All done!</span>")
-
-    def run_final_script(self):
-        self.log.append("🔄 Running finalscript.py...")
-        self.log.repaint()
-        process = subprocess.Popen(
-            [sys.executable, "finalscript.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-            universal_newlines=True,
-        )
-        for line in process.stdout:
-            self.log.append(line.strip())
-            QApplication.processEvents()
-        process.wait()
-        self.log.append("<span style='color:green;'>✅ Done.</span>")
 
 
 if __name__ == "__main__":
