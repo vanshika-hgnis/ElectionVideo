@@ -12,8 +12,9 @@ import edge_tts
 
 
 class VideoProcessor:
-    def __init__(self, config, log_callback):
+    def __init__(self, config, log_callback, progress_callback=None):
         self.config = config
+        self.progress = progress_callback
         self.log = log_callback
         self.global_bbox = config.get("bbox", None)
 
@@ -217,7 +218,11 @@ class VideoProcessor:
 
     def process_all(self):
         df = pd.read_excel(self.config["excel_path"])
+        total = len(df)
         for idx, row in df.iterrows():
+            percent = int((idx + 1) / total * 100)
+            if self.progress:
+                self.progress(percent)
             name = str(row["Name"]).strip()
             mobile = str(row["Mobile"]).strip()
             base_output = self.config.get("output_folder", "output")
